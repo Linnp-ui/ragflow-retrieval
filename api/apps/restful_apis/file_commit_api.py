@@ -20,6 +20,7 @@ from functools import wraps
 from quart import request
 
 from api.apps import login_required, current_user
+from api.common.check_team_permission import check_kb_manage_permission
 from api.utils.api_utils import get_json_result, get_data_error_result, get_request_json, server_error_response, validate_request
 
 # manager is injected dynamically by api.apps.register_page() before this
@@ -268,6 +269,11 @@ def _register_commit_routes(prefix, param_name, resolver_type=None):
     async def get_commit_file_content(entity_id, commit_id, file_id):
         folder_id = _resolve(entity_id)
         try:
+            # 知识库文件内容与知识库文档同一权限：仅创建者可查看/下载
+            if resolver_type == "datasets":
+                allowed, msg = check_kb_manage_permission(entity_id, current_user.id)
+                if not allowed:
+                    return get_data_error_result(message=msg)
             commit = FileCommitService.get_commit(commit_id)
             if not commit:
                 return get_data_error_result("Commit not found")

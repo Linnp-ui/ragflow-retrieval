@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field, validator
 from quart import request
 
 from api.apps import login_required
+from api.common.check_team_permission import check_kb_manage_permission
 from api.db.joint_services.tenant_model_service import (
     split_model_name,
     get_model_config_from_provider_instance,
@@ -34,6 +35,7 @@ from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
+from api.db.services.user_service import TenantService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.task_service import TaskService, cancel_all_task_of, queue_tasks
 from api.db.services.tenant_llm_service import TenantLLMService
@@ -156,12 +158,20 @@ def _enrich_chunks_with_document_metadata(chunks: list[dict], metadata_fields=No
     enrich_chunks_with_document_metadata(chunks, metadata_fields)
 
 
+def _check_chunk_manage_permission(user_id: str, kb_id: str):
+    allowed, msg = check_kb_manage_permission(kb_id, user_id)
+    if not allowed:
+        return get_error_data_result(message=msg)
+    return None
+
+
 @manager.route("/datasets/<dataset_id>/chunks", methods=["POST"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
 async def parse(tenant_id, dataset_id):
-    if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
-        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+    # 文档管理权限：仅知识库创建者或租户管理员可解析文档
+    if (err := _check_chunk_manage_permission(tenant_id, dataset_id)):
+        return err
     req = await get_request_json()
     if not req.get("document_ids"):
         return get_error_data_result("`document_ids` is required")
@@ -225,8 +235,9 @@ async def parse(tenant_id, dataset_id):
 @login_required
 @add_tenant_id_to_kwargs
 async def stop_parsing(tenant_id, dataset_id):
-    if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
-        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+    # 文档管理权限
+    if (err := _check_chunk_manage_permission(tenant_id, dataset_id)):
+        return err
     req = await get_request_json()
 
     if not req.get("document_ids"):
@@ -276,11 +287,39 @@ async def stop_parsing(tenant_id, dataset_id):
 @add_tenant_id_to_kwargs
 async def retrieval_test(tenant_id):
     req = await get_request_json()
-    if not req.get("dataset_ids"):
-        return get_error_data_result("`dataset_ids` is required.")
-    kb_ids = req["dataset_ids"]
+    kb_ids = req.get("dataset_ids")
+    if kb_ids is None:
+        # Align with MCP schema: omitted dataset_ids searches all accessible datasets
+        try:
+            joined = TenantService.get_joined_tenants_by_user_id(tenant_id)
+            tids = [t["tenant_id"] for t in joined] if joined and isinstance(joined[0], dict) else [t.tenant_id if hasattr(t, "tenant_id") else t for t in joined]
+            tids = list(dict.fromkeys(tids + [tenant_id]))
+            # Use get_by_tenant_ids to include team datasets; fallback to get_kb_ids
+            try:
+                kbs = KnowledgebaseService.get_by_tenant_ids(tids, tenant_id, 1, 100, "create_time", True, "")
+                kb_ids = [k["id"] if isinstance(k, dict) else k.id for k in (kbs[0] if isinstance(kbs, tuple) else kbs)]
+            except Exception:
+                kb_ids = KnowledgebaseService.get_kb_ids(tenant_id)
+        except Exception:
+            kb_ids = KnowledgebaseService.get_kb_ids(tenant_id)
+        if not kb_ids:
+            return get_result(data={"total": 0, "chunks": [], "doc_aggs": {}})
     if not isinstance(kb_ids, list):
         return get_error_data_result("`dataset_ids` should be a list")
+    if len(kb_ids) == 0:
+        try:
+            joined = TenantService.get_joined_tenants_by_user_id(tenant_id)
+            tids = [t["tenant_id"] for t in joined] if joined and isinstance(joined[0], dict) else [t.tenant_id if hasattr(t, "tenant_id") else t for t in joined]
+            tids = list(dict.fromkeys(tids + [tenant_id]))
+            try:
+                kbs = KnowledgebaseService.get_by_tenant_ids(tids, tenant_id, 1, 100, "create_time", True, "")
+                kb_ids = [k["id"] if isinstance(k, dict) else k.id for k in (kbs[0] if isinstance(kbs, tuple) else kbs)]
+            except Exception:
+                kb_ids = KnowledgebaseService.get_kb_ids(tenant_id)
+        except Exception:
+            kb_ids = KnowledgebaseService.get_kb_ids(tenant_id)
+        if not kb_ids:
+            return get_result(data={"total": 0, "chunks": [], "doc_aggs": {}})
     for id in kb_ids:
         if not KnowledgebaseService.accessible(kb_id=id, user_id=tenant_id):
             return get_error_data_result(f"You don't own the dataset {id}.")
@@ -318,7 +357,7 @@ async def retrieval_test(tenant_id):
         else:
             doc_ids = None
     similarity_threshold = float(req.get("similarity_threshold", 0.2))
-    vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
+    vector_similarity_weight = float(req.get("vector_similarity_weight", 0.6))
     top = int(req.get("top_k", 1024))
     if top <= 0:
         return get_error_data_result("`top_k` must be greater than 0")
@@ -508,8 +547,9 @@ async def get_chunk(tenant_id, dataset_id, document_id, chunk_id):
 async def add_chunk(tenant_id, dataset_id, document_id):
     from rag.nlp import rag_tokenizer, search
 
-    if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
-        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+    # 文档管理权限
+    if (err := _check_chunk_manage_permission(tenant_id, dataset_id)):
+        return err
     dataset_tenant_id = _get_dataset_tenant_id(dataset_id)
     if not dataset_tenant_id:
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
@@ -597,8 +637,9 @@ async def add_chunk(tenant_id, dataset_id, document_id):
 async def rm_chunk(tenant_id, dataset_id, document_id):
     from rag.nlp import search
 
-    if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
-        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+    # 文档管理权限
+    if (err := _check_chunk_manage_permission(tenant_id, dataset_id)):
+        return err
     dataset_tenant_id = _get_dataset_tenant_id(dataset_id)
     if not dataset_tenant_id:
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
@@ -647,8 +688,9 @@ async def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
     from rag.app.qa import beAdoc, rmPrefix
     from rag.nlp import rag_tokenizer, search
 
-    if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
-        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+    # 文档管理权限
+    if (err := _check_chunk_manage_permission(tenant_id, dataset_id)):
+        return err
     dataset_tenant_id = _get_dataset_tenant_id(dataset_id)
     if not dataset_tenant_id:
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
@@ -734,8 +776,9 @@ async def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
 async def switch_chunks(tenant_id, dataset_id, document_id):
     from rag.nlp import search
 
-    if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
-        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+    # 文档管理权限
+    if (err := _check_chunk_manage_permission(tenant_id, dataset_id)):
+        return err
     dataset_tenant_id = _get_dataset_tenant_id(dataset_id)
     if not dataset_tenant_id:
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")

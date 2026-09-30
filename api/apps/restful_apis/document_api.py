@@ -37,7 +37,7 @@ from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.common.check_team_permission import check_kb_team_permission
+from api.common.check_team_permission import check_kb_manage_permission
 from api.db.services.task_service import TaskService, cancel_all_task_of
 from api.utils.api_utils import construct_json_result, get_data_error_result, get_error_data_result, get_result, get_json_result, \
     server_error_response, add_tenant_id_to_kwargs, get_request_json, get_error_argument_result, check_duplicate_ids
@@ -54,6 +54,13 @@ from api.utils.file_utils import filename_type, thumbnail
 from api.utils.web_utils import CONTENT_TYPE_MAP, html2pdf, is_valid_url, apply_safe_file_response_headers
 from common.ssrf_guard import assert_url_is_safe
 from rag.nlp import search
+
+
+def _check_doc_manage_permission(user_id: str, kb_id: str):
+    allowed, msg = check_kb_manage_permission(kb_id, user_id)
+    if not allowed:
+        return get_error_data_result(message=msg)
+    return None
 
 
 @manager.route("/documents/upload", methods=["POST"])  # noqa: F821
@@ -173,9 +180,9 @@ async def update_document(tenant_id, dataset_id, document_id):
     """
     req = await get_request_json()
 
-    # Verify ownership and existence of dataset and document
-    if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
-        return get_error_data_result(message="You don't own the dataset.")
+    # 文档管理权限：仅知识库创建者或租户管理员可编辑管理
+    if (err := _check_doc_manage_permission(tenant_id, dataset_id)):
+        return err
     e, kb = KnowledgebaseService.get_by_id(dataset_id)
     if not e:
         return get_error_data_result(message="Can't find this dataset!")
@@ -316,8 +323,9 @@ async def metadata_batch_update(dataset_id, tenant_id):
       200:
         description: Metadata updated successfully.
     """
-    if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
-        return get_error_data_result(message=f"You don't own the dataset {dataset_id}. ")
+    # 文档管理权限
+    if (err := _check_doc_manage_permission(tenant_id, dataset_id)):
+        return err
 
     req = await get_request_json()
     selector = req.get("selector", {}) or {}
@@ -440,9 +448,9 @@ async def upload_document(dataset_id, tenant_id):
         logging.error(f"Can't find the dataset with ID {dataset_id}!")
         return get_error_data_result(message=f"Can't find the dataset with ID {dataset_id}!", code=RetCode.DATA_ERROR)
 
-    if not check_kb_team_permission(kb, tenant_id):
-        logging.error("No authorization.")
-        return get_error_data_result(message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+    # 文档管理权限：仅知识库创建者或租户管理员可上传文档
+    if (err := _check_doc_manage_permission(tenant_id, dataset_id)):
+        return err
 
     if upload_type == "web":
         return await _upload_web_document(dataset_id, kb, tenant_id)
@@ -1075,9 +1083,9 @@ async def delete_documents(tenant_id, dataset_id):
         return get_error_argument_result(err)
 
     try:
-        # Validate dataset exists and user has permission
-        if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
-            return get_error_data_result(message=f"You don't own the dataset {dataset_id}. ")
+        # 文档管理权限：仅知识库创建者或租户管理员可删除
+        if (err := _check_doc_manage_permission(tenant_id, dataset_id)):
+            return err
 
         # Get documents to delete
         doc_ids = req.get("ids") or []
@@ -1156,9 +1164,9 @@ async def update_metadata_config(tenant_id, dataset_id, document_id):
       200:
         description: Document updated successfully.
     """
-    # Verify ownership and existence of dataset
-    if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
-        return get_error_data_result(message="You don't own the dataset.")
+    # 文档管理权限：仅知识库创建者或租户管理员可修改元数据配置
+    if (err := _check_doc_manage_permission(tenant_id, dataset_id)):
+        return err
 
     # Verify document exists in the dataset
     doc = DocumentService.query(id=document_id, kb_id=dataset_id)
@@ -1293,8 +1301,9 @@ async def update_metadata(tenant_id, dataset_id):
         description: Metadata updated successfully.
     """
     # Verify ownership of dataset
-    if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
-        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+    # 文档管理权限
+    if (err := _check_doc_manage_permission(tenant_id, dataset_id)):
+        return err
 
     # Get request body
     req = await get_request_json()
@@ -1378,7 +1387,11 @@ async def ingest(tenant_id):
 
 def _run_sync(user_id:str, req):
     for doc_id in req["doc_ids"]:
-        if not DocumentService.accessible(doc_id, user_id):
+        e, doc = DocumentService.get_by_id(doc_id)
+        if not e:
+            return RetCode.DATA_ERROR, "Document not found!"
+        allowed, _ = check_kb_manage_permission(doc.kb_id, user_id)
+        if not allowed:
             return RetCode.AUTHENTICATION_ERROR, "No authorization."
 
     kb_table_num_map = {}
@@ -1466,8 +1479,9 @@ async def parse_documents(tenant_id, dataset_id):
       200:
         description: Successful operation.
     """
-    if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
-        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+    # 文档管理权限
+    if (err := _check_doc_manage_permission(tenant_id, dataset_id)):
+        return err
 
     req = await get_request_json()
     if req is None:
@@ -1578,8 +1592,9 @@ async def stop_parse_documents(tenant_id, dataset_id):
       200:
         description: Successful operation.
     """
-    if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
-        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+    # 文档管理权限
+    if (err := _check_doc_manage_permission(tenant_id, dataset_id)):
+        return err
 
     req = await get_request_json()
     if req is None:
@@ -1726,6 +1741,9 @@ async def get_document_image(image_id):
         if not parsed:
             return get_data_error_result(message="Image not found.")
         bkt, nm = parsed
+        # 文档内容权限：分块图片属于知识库文档内容
+        if (err := _check_doc_manage_permission(current_user.id, bkt)):
+            return err
         data = await thread_pool_exec(settings.STORAGE_IMPL.get, bkt, nm)
         if not data:
             return get_data_error_result(message="Image not found.")
@@ -1856,9 +1874,9 @@ async def batch_update_document_status(tenant_id, dataset_id):
     if status not in ["0", "1"]:
         return get_error_argument_result(message=f'"Status" must be either 0 or 1:{status}!')
 
-    # Verify dataset ownership
-    if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
-        return get_error_data_result(message="You don't own the dataset.")
+    # 文档管理权限：仅知识库创建者或租户管理员可批量改状态
+    if (err := _check_doc_manage_permission(tenant_id, dataset_id)):
+        return err
 
     e, kb = KnowledgebaseService.get_by_id(dataset_id)
     if not e:
@@ -1929,12 +1947,13 @@ async def get(doc_id):
     enumeration.
     """
     try:
-        if not DocumentService.accessible(doc_id, current_user.id):
-            return get_data_error_result(message="Document not found!")
-
         e, doc = DocumentService.get_by_id(doc_id)
         if not e:
             return get_data_error_result(message="Document not found!")
+
+        # 文档内容权限：仅知识库创建者或租户管理员可查看文件内容
+        if (err := _check_doc_manage_permission(current_user.id, doc.kb_id)):
+            return err
 
         b, n = File2DocumentService.get_storage_address(doc_id=doc_id)
         data = await thread_pool_exec(settings.STORAGE_IMPL.get, b, n)
@@ -2003,6 +2022,13 @@ async def download(dataset_id, document_id):
     """
     if not document_id:
         return get_error_data_result(message="Specify document_id please.")
+
+    # 文档内容权限：仅知识库创建者本人可下载，无权限时返回 HTTP 403，
+    # 避免前端把 JSON 错误体当作文件保存。
+    if (err := _check_doc_manage_permission(current_user.id, dataset_id)):
+        err.status_code = 403
+        return err
+
     doc = DocumentService.query(kb_id=dataset_id, id=document_id)
     if not doc:
         return get_error_data_result(message=f"The dataset not own the document {document_id}.")
@@ -2063,6 +2089,13 @@ async def download_document(document_id):
     doc = DocumentService.query(id=document_id)
     if not doc:
         return get_error_data_result(message=f"The dataset not own the document {document_id}.")
+
+    # 文档内容权限：仅知识库创建者本人可下载，无权限时返回 HTTP 403，
+    # 避免前端把 JSON 错误体当作文件保存。
+    if (err := _check_doc_manage_permission(current_user.id, doc[0].kb_id)):
+        err.status_code = 403
+        return err
+
     # The process of downloading
     doc_id, doc_location = File2DocumentService.get_storage_address(doc_id=document_id)  # minio address
     file_stream = settings.STORAGE_IMPL.get(doc_id, doc_location)

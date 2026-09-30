@@ -20,6 +20,26 @@ from api.db.db_models import File, Knowledgebase
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.user_service import TenantService
+from common.constants import StatusEnum
+
+
+def check_kb_manage_permission(kb_id: str, user_id: str) -> tuple[bool, str]:
+    """管理/编辑知识库文档的权限检查。
+
+    只有知识库创建者本人可以编辑、管理、下载该知识库的文档；其他用户
+    （包括租户 Owner/Admin）一律没有管理和编辑权限。
+    """
+    e, kb = KnowledgebaseService.get_by_id(kb_id)
+    if not e or not kb:
+        return False, "Knowledge base not found."
+
+    if kb.status != StatusEnum.VALID.value:
+        return False, "Knowledge base is not available."
+
+    if kb.created_by == user_id:
+        return True, "OK"
+
+    return False, "You do not have permission to manage documents in this knowledge base."
 
 
 def check_kb_team_permission(kb: dict | Knowledgebase, other: str) -> bool:
@@ -53,7 +73,10 @@ def check_file_team_permission(file: dict | File, other: str) -> bool:
         if not ok:
             continue
 
-        if check_kb_team_permission(kb, other):
+        # 知识库文件与知识库文档采用同一套管理权限：
+        # 仅知识库创建者或所在租户 Owner/Admin 可访问、下载与管理。
+        allowed, _ = check_kb_manage_permission(kb_id, other)
+        if allowed:
             return True
 
     return False
