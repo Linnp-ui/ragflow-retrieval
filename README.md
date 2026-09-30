@@ -1,3 +1,98 @@
+# RAGFlow Retrieval — a customised fork
+
+> [!IMPORTANT]
+> This is **not** the upstream RAGFlow project. It is a fork of
+> [infiniflow/ragflow](https://github.com/infiniflow/ragflow) v0.26.0, carrying a retrieval-tuning
+> layer and a narrower permission model.
+>
+> **This fork does not track upstream.** The parallel Go/C++ backend that upstream carried was
+> removed here (commit `72a7752`), so a rebase against upstream is not a mechanical operation. Use
+> upstream for reference, not as a merge source.
+
+## Read this before editing code
+
+**Thirteen files in the main tree are bind-mounted over at runtime.** `docker/docker-compose.yml`
+mounts `docker/patches/*.py` on top of the real module paths, so the patch copy is what executes.
+Editing the main-tree file has **no effect** — the change is silently ignored.
+
+| Patch (edit this) | Mounted over |
+|---|---|
+| `docker/patches/api_apps_init.py` | `api/apps/__init__.py` |
+| `docker/patches/dataset_api_service.py` | `api/apps/services/dataset_api_service.py` |
+| `docker/patches/dialog_service.py` | `api/db/services/dialog_service.py` |
+| `docker/patches/embedding_model.py` | `rag/llm/embedding_model.py` |
+| `docker/patches/figure_parser.py` | `deepdoc/parser/figure_parser.py` |
+| `docker/patches/file_service.py` | `api/db/services/file_service.py` |
+| `docker/patches/knowledgebase_service.py` | `api/db/services/knowledgebase_service.py` |
+| `docker/patches/mcp_server.py` | `mcp/server/server.py` |
+| `docker/patches/provider_api.py` | `api/apps/restful_apis/provider_api.py` |
+| `docker/patches/search.py` | `rag/nlp/search.py` |
+| `docker/patches/table.py` | `rag/app/table.py` |
+| `docker/patches/task_service.py` | `api/db/services/task_service.py` |
+| `docker/patches/tenant_model_instance_service.py` | `api/db/services/tenant_model_instance_service.py` |
+
+This already cost one change: the MCP `vector_similarity_weight` default of `0.6` was applied to
+`mcp/server/server.py` and did nothing, because `docker/patches/mcp_server.py` still said `0.3`.
+The fix belongs in the patch (commit `e31a07a`).
+
+Verify what is actually mounted rather than trusting the file list:
+
+```bash
+cd docker && docker compose config | grep patches/
+```
+
+After changing a mounted file, restart the container — the mount is read at process start:
+
+```bash
+docker compose -f docker/docker-compose.yml up -d ragflow-cpu
+```
+
+## What this fork changes
+
+**Retrieval rules are externalised.** Domain routing (`_domain_rules`), negative-lookahead
+patterns (`_NEG_RE`) and the LLM prompt examples were hardcoded in `rag/nlp/search.py`. They now
+live in `conf/builtin_retrieval_rules.json` and are loaded through `_brl_*` helpers. See
+`docker/patches/BUILTIN_RULES_README.md`. Design points worth knowing:
+
+- `RAGFLOW_BUILTIN_RULES=0` disables the whole mechanism, so a deployment that wants the untouched
+  upstream baseline gets it without a code change.
+- The config is polled every 30s, so edits apply without a restart.
+- `_apply_tenant_ids` scopes the rules to specific tenants; `null` means all.
+- Emptying one section (`patterns: []`, `domain_rules: []`) disables only that section.
+- The patches in `docker/patches/patch_*.py` are idempotent (each guards with a MARK) and can be
+  re-run via `bash docker/patches/apply_builtin_rules.sh`.
+
+**Document management is restricted to the knowledge base's creator.** Upstream lets anyone sharing
+the tenant edit a knowledge base, which puts a tenant owner or admin within reach of every knowledge
+base in the tenant. `check_kb_manage_permission` in `api/common/check_team_permission.py` narrows
+this to the creator alone, and the chunk, document and file-commit APIs route through it. This
+removes access — anyone relying on the old team-wide behaviour will lose it.
+
+**The UI is localised.** Chunk-method labels and their descriptions are translated in
+`web/src/locales/{zh,en}.ts` instead of showing raw internal keys.
+
+**Smaller changes:** vLLM receives `enable_thinking` under `chat_template_kwargs`; the PDF parser
+normalises display labels such as `"Plain Text"` onto the internal keys it dispatches on; MCP runs
+in `host` mode so the RAGFlow layer checks each caller's own API key rather than a shared host key.
+
+## Deploying
+
+```bash
+cd docker
+cp .env .env.local 2>/dev/null || true      # adjust DOC_ENGINE, passwords, RAGFLOW_BUILTIN_RULES
+docker compose -f docker-compose.yml up -d
+```
+
+Keep `RAGFLOW_BUILTIN_RULES=1` to activate the tuned rules, or `0` for the upstream baseline.
+
+## Upstream
+
+Based on [infiniflow/ragflow](https://github.com/infiniflow/ragflow) v0.26.0, Apache-2.0. The
+project description, architecture notes and everything below this notice are upstream's and remain
+accurate for this fork except where noted above.
+
+---
+
 <div align="center">
 <a href="https://cloud.ragflow.io/">
 <img src="web/src/assets/logo-with-text.svg" width="520" alt="ragflow logo">
