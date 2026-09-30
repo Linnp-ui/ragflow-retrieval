@@ -1,0 +1,1 @@
+{"enabled": true, "min_confidence": 0.85, "max_docs": 100, "ttl_sec": 600, "timeout_sec": 20}

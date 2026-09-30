@@ -1,0 +1,46 @@
+{
+  "_meta": {
+    "comment": "Built-in retrieval rules (爱博售后调优,可被环境变量或租户隔离). 三块独立:domain_rules(域路由) / neg_patterns(负例拦截) / llm_route_examples(LLM PROMPT 示例). 任何一段缺失或为空 -> search.py 内部默认 fallback(等同爱博当前行为). 他人租户若要纯基线: 在 ragflow.env 设 RAGFLOW_BUILTIN_RULES=0,或留空全部字段.",
+    "version": "v20260828-builtin-rules-extract",
+    "config_hot_reload_seconds": 30,
+    "env_disable_all": "RAGFLOW_BUILTIN_RULES=0",
+    "env_config_path": "RAGFLOW_BUILTIN_RULES_PATH=/path/to/file.json",
+    "tenant_scope": "若此节非空,规则仅对 _apply_tenant_ids 列出的租户生效;空数组/null -> 全部租户生效."
+  },
+  "_apply_tenant_ids": null,
+  "domain_rules": [
+    {"pattern": "BOT012|P01-\\d+|现SN号|样机编号|型检", "doc_keys": ["样机表"]},
+    {"pattern": "销售|销售额|月度汇总|库存统计|中文销售", "doc_keys": ["中文销售", "销售"]},
+    {"pattern": "会议纪要|王鹏.*任务|下一步安排|主持人", "doc_keys": ["会议纪要"]},
+    {"pattern": "问题跟踪|问题报表|故障|SH001|卡扣反了|Y轴.*噪音|神经造影", "doc_keys": ["问题跟踪", "问题报表"]},
+    {"pattern": "维修备料|备件|易损件|单机用量|研发物料编码", "doc_keys": ["维修备料", "备件"]},
+    {"pattern": "P02|冠脉|驱动器|调节支臂|操作器|服务手册", "doc_keys": ["P02", "服务手册", "冠脉"]},
+    {"pattern": "P03|神经介入|NRV", "doc_keys": ["P03", "神经介入", "NRV"]}
+  ],
+  "neg_patterns": {
+    "_comment": "负例命中 -> threshold 抬高到 neg_threshold;GENERATION-NEG 等兜底仍生效. _NEG_RE_RE2 是为 re.search 中文上下文写的(\\b 不可用). 顺序无所谓(全 OR).",
+    "patterns": [
+      "P0[4-9]",
+      "P09",
+      "GD999",
+      "GD2025-9\\d\\d",
+      "9999",
+      "A999",
+      "202[6-9]\\s*年",
+      "20[3-9]d\\s*年",
+      "改成",
+      "帮我",
+      "那个样机",
+      "股票代码"
+    ],
+    "neg_threshold": 0.35
+  },
+  "llm_route_examples": {
+    "_comment": "PROMPT 模板里的'多版本快照'例子. 默认爱博 P0x;设成空串则 PROMPT 改用通用句'同一台账的不同版本快照(如 device_table_2024Q1.xlsx、device_table_2024Q4.xlsx)'. 同样适用于 v2 PROMPT 里的所有产品线代号出现位.",
+    "versioned_doc_example": "P01样机表__20240410更新、P01样机表__20251215更新",
+    "versioned_doc_phrase": "同一台账的不同版本快照",
+    "entity_rule_text": "问具体实体（编号/序列号/人名/设备）的存放、状态、用途，无法判断实体在哪个版本时：同时选出该系列的全部版本快照文档（不要只选日期最大的）",
+    "latest_rule_text": "问题明确含\"最新/当前\"时，只选该系列日期最大的版本",
+    "year_rule_text": "问某具体年份数据时选对应该年份的文档"
+  }
+}
