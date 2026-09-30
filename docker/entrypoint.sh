@@ -185,25 +185,11 @@ export LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu/"
 PY=python3
 
 # -----------------------------------------------------------------------------
-# Select Nginx Configuration based on API_PROXY_SCHEME
+# Select Nginx Configuration (single Python backend)
 # -----------------------------------------------------------------------------
 NGINX_CONF_DIR="/etc/nginx/conf.d"
-if [ -n "$API_PROXY_SCHEME" ]; then
-    if [[ "${API_PROXY_SCHEME}" == "hybrid" ]]; then
-        cp -f "$NGINX_CONF_DIR/ragflow.conf.hybrid" "$NGINX_CONF_DIR/ragflow.conf"
-        echo "Applied nginx config: ragflow.conf.hybrid"
-    elif [[ "${API_PROXY_SCHEME}" == "go" ]]; then
-        cp -f "$NGINX_CONF_DIR/ragflow.conf.golang" "$NGINX_CONF_DIR/ragflow.conf"
-        echo "Applied nginx config: ragflow.conf.golang (default)"
-    else
-        cp -f "$NGINX_CONF_DIR/ragflow.conf.python" "$NGINX_CONF_DIR/ragflow.conf"
-        echo "Applied nginx config: ragflow.conf.python"
-    fi
-else
-    # Default to python backend
-    cp -f "$NGINX_CONF_DIR/ragflow.conf.python" "$NGINX_CONF_DIR/ragflow.conf"
-    echo "Default: applied nginx config: ragflow.conf.python"
-fi
+cp -f "$NGINX_CONF_DIR/ragflow.conf.python" "$NGINX_CONF_DIR/ragflow.conf"
+echo "Applied nginx config: ragflow.conf.python"
 
 # -----------------------------------------------------------------------------
 # Function(s)
@@ -293,16 +279,6 @@ if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
         echo "RAGFlow python server started."
         sleep 1;
     done &
-
-    if [[ "${API_PROXY_SCHEME}" == "hybrid" ]]; then
-        while true; do
-            echo "Attempt to start RAGFlow go server..."
-            wait_for_server "http://127.0.0.1:9380/api/v1/system/healthz" "ragflow_server"
-            echo "Starting RAGFlow go server..."
-            bin/server_main
-            sleep 1;
-        done &
-    fi
 fi
 
 
@@ -313,16 +289,6 @@ if [[ "${ENABLE_ADMIN_SERVER}" -eq 1 ]]; then
         echo "Admin python server started"
         sleep 1;
     done &
-
-    if [[ "${API_PROXY_SCHEME}" == "hybrid" ]]; then
-        while true; do
-            echo "Attempt to starting Admin go server..."
-            wait_for_server "http://127.0.0.1:9381/api/v1/admin/ping" "admin_server"
-            echo "Starting Admin go server..."
-            bin/admin_server
-            sleep 1;
-        done &
-    fi
 fi
 
 if [[ "${ENABLE_DATASYNC}" -eq 1 ]]; then
