@@ -1,9 +1,13 @@
-# RAGFlow Retrieval — a customised fork
+# RAGFlow Retrieval
+
+A personal project: a customised fork of
+[RAGFlow](https://github.com/infiniflow/ragflow) v0.26.0, carrying a retrieval-tuning layer and a
+narrower permission model. Built for a specific deployment, published as-is — see
+[Licensing](#licensing) before reusing it.
 
 > [!IMPORTANT]
-> This is **not** the upstream RAGFlow project. It is a fork of
-> [infiniflow/ragflow](https://github.com/infiniflow/ragflow) v0.26.0, carrying a retrieval-tuning
-> layer and a narrower permission model.
+> This is **not** the upstream RAGFlow project, and it is not affiliated with or endorsed by
+> InfiniFlow.
 >
 > **This fork does not track upstream.** The parallel Go/C++ backend that upstream carried was
 > removed here (commit `72a7752`), so a rebase against upstream is not a mechanical operation. Use
@@ -521,6 +525,8 @@ docker build --platform linux/amd64 \
 - [References](https://ragflow.io/docs/dev/category/references)
 - [FAQs](https://ragflow.io/docs/dev/faq)
 
+Everything below this line is upstream's, unchanged.
+
 ## 📜 Roadmap
 
 See the [RAGFlow Roadmap 2026](https://github.com/infiniflow/ragflow/issues/12241)
@@ -535,3 +541,15 @@ See the [RAGFlow Roadmap 2026](https://github.com/infiniflow/ragflow/issues/1224
 
 RAGFlow flourishes via open-source collaboration. In this spirit, we embrace diverse contributions from the community.
 If you would like to be a part, review our [Contribution Guidelines](https://ragflow.io/docs/dev/contributing) first.
+
+## Licensing
+
+Upstream RAGFlow is Apache-2.0, and this fork keeps that licence — see [LICENSE](LICENSE). The
+retrieval rules in `docker/patches/builtin_retrieval_rules.json` were written for one specific
+deployment and encode that organisation's product lines, document naming and part numbers. Nothing
+here is a claim of authorship over RAGFlow itself; credit belongs to
+[InfiniFlow](https://github.com/infiniflow/ragflow) and its contributors.
+
+If you reuse this, expect to replace `docker/patches/` with your own tuning, and read
+[What this fork changes](#what-this-fork-changes) first — the permission model is *narrower* than
+upstream's, which will break anything that relies on team-wide knowledge base access.
