@@ -229,9 +229,22 @@ internal/cpp/cmake-build-debug/
 # Trae IDE config
 .trae/
 
-# Go server build output
-bin/*
-!bin/.gitkeep
+# Local audit data: SQLite database + per-day request logs (contains real
+# user queries and file paths). Regenerate locally with docker/audit/audit_cli.py.
+docker/audit/
+docker/~/
+
+# Backup snapshots left behind by the patch tooling in docker/patches/
+*.bak
+*.bak-*
+*.orig.bak
+
+# Copy of files that are bind-mounted into the container, kept for reference
+docker/patches/_mounted/
+
+# Internal ops notes (not part of the fork's runtime)
+docker/patches/ops-ragdoc/
+
 .claude/settings.local.json
 
 .run/
