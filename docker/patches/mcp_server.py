@@ -688,7 +688,7 @@ async def list_tools(*, connector: RAGFlowConnector, api_key: str) -> list[types
                     "vector_similarity_weight": {
                         "type": "number",
                         "description": "Weight for vector similarity vs term similarity",
-                        "default": 0.3,
+                        "default": 0.6,
                         "minimum": 0.0,
                         "maximum": 1.0,
                     },
@@ -731,7 +731,7 @@ async def list_tools(*, connector: RAGFlowConnector, api_key: str) -> list[types
                     "page": {"type": "integer", "description": "Page number", "default": 1, "minimum": 1},
                     "page_size": {"type": "integer", "description": "最终返回条数（硬上限，受 doc_quota 约束）", "default": 10, "minimum": 1, "maximum": 1024},
                     "similarity_threshold": {"type": "number", "description": "Minimum similarity threshold", "default": 0.2, "minimum": 0.0, "maximum": 1.0},
-                    "vector_similarity_weight": {"type": "number", "description": "Weight for vector similarity vs term similarity", "default": 0.3, "minimum": 0.0, "maximum": 1.0},
+                    "vector_similarity_weight": {"type": "number", "description": "Weight for vector similarity vs term similarity", "default": 0.6, "minimum": 0.0, "maximum": 1.0},
                     "keyword": {"type": "boolean", "description": "Enable keyword-based search", "default": False},
                     "top_k": {"type": "integer", "description": "Maximum results to consider before ranking (recall pool)", "default": 1024, "minimum": 1, "maximum": 1024},
                     "rerank_id": {"type": "string", "description": "Optional reranking model identifier"},
