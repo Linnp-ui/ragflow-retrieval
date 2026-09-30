@@ -35,6 +35,7 @@ export type SelectWithSearchFlagOptionType = {
   label: ReactNode;
   value?: string;
   disabled?: boolean;
+  description?: string;
   options?: RAGFlowSelectOptionType[];
 };
 
@@ -273,7 +274,12 @@ export const SelectWithSearch = forwardRef<
                           }
                           className={value === option.value ? 'bg-bg-card' : ''}
                         >
-                          <span className="leading-none">{option.label}</span>
+                          <div className="flex flex-col flex-1">
+                            <span className="leading-none">{option.label}</span>
+                            {option.description && (
+                              <span className="text-xs text-text-secondary mt-1 leading-none">{option.description}</span>
+                            )}
+                          </div>
 
                           {value === option.value && (
                             <CheckIcon size={16} className="ml-auto" />

@@ -95,41 +95,42 @@ export const useFetchTenantInfo = (
   return { data, loading };
 };
 
-export const useSelectParserList = (): Array<{
-  value: string;
-  label: string;
-}> => {
+export const useSelectParserList = (): Array<{ value: string; label: string; description?: string; }> => {
   const { data: tenantInfo } = useFetchTenantInfo(true);
   const { t } = useTranslation();
 
   const defaultParsers = useMemo(
     () => [
-      { value: 'naive', label: t('knowledgeConfiguration.parserLabel.naive') },
-      { value: 'qa', label: t('knowledgeConfiguration.parserLabel.qa') },
+      { value: 'naive', label: t('knowledgeConfiguration.parserLabel.naive'), description: t('knowledgeConfiguration.parserDescription.naive') },
+      { value: 'qa', label: t('knowledgeConfiguration.parserLabel.qa'), description: t('knowledgeConfiguration.parserDescription.qa') },
       {
         value: 'resume',
         label: t('knowledgeConfiguration.parserLabel.resume'),
+        description: t('knowledgeConfiguration.parserDescription.resume'),
       },
       {
         value: 'manual',
         label: t('knowledgeConfiguration.parserLabel.manual'),
+        description: t('knowledgeConfiguration.parserDescription.manual'),
       },
-      { value: 'table', label: t('knowledgeConfiguration.parserLabel.table') },
-      { value: 'paper', label: t('knowledgeConfiguration.parserLabel.paper') },
-      { value: 'book', label: t('knowledgeConfiguration.parserLabel.book') },
-      { value: 'laws', label: t('knowledgeConfiguration.parserLabel.laws') },
+      { value: 'table', label: t('knowledgeConfiguration.parserLabel.table'), description: t('knowledgeConfiguration.parserDescription.table') },
+      { value: 'paper', label: t('knowledgeConfiguration.parserLabel.paper'), description: t('knowledgeConfiguration.parserDescription.paper') },
+      { value: 'book', label: t('knowledgeConfiguration.parserLabel.book'), description: t('knowledgeConfiguration.parserDescription.book') },
+      { value: 'laws', label: t('knowledgeConfiguration.parserLabel.laws'), description: t('knowledgeConfiguration.parserDescription.laws') },
       {
         value: 'presentation',
         label: t('knowledgeConfiguration.parserLabel.presentation'),
+        description: t('knowledgeConfiguration.parserDescription.presentation'),
       },
       {
         value: 'picture',
         label: t('knowledgeConfiguration.parserLabel.picture'),
+        description: t('knowledgeConfiguration.parserDescription.picture'),
       },
-      { value: 'one', label: t('knowledgeConfiguration.parserLabel.one') },
-      { value: 'audio', label: t('knowledgeConfiguration.parserLabel.audio') },
-      { value: 'email', label: t('knowledgeConfiguration.parserLabel.email') },
-      { value: 'tag', label: t('knowledgeConfiguration.parserLabel.tag') },
+      { value: 'one', label: t('knowledgeConfiguration.parserLabel.one'), description: t('knowledgeConfiguration.parserDescription.one') },
+      { value: 'audio', label: t('knowledgeConfiguration.parserLabel.audio'), description: t('knowledgeConfiguration.parserDescription.audio') },
+      { value: 'email', label: t('knowledgeConfiguration.parserLabel.email'), description: t('knowledgeConfiguration.parserDescription.email') },
+      { value: 'tag', label: t('knowledgeConfiguration.parserLabel.tag'), description: t('knowledgeConfiguration.parserDescription.tag') },
     ],
     [t],
   );

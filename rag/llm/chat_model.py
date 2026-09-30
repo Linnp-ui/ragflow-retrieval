@@ -118,8 +118,13 @@ def _apply_model_family_policies(
     sanitized_kwargs = dict(request_kwargs) if request_kwargs else {}
 
     # Qwen3 family disables thinking by extra_body on non-stream chat requests.
+    # vLLM (OpenAI-compatible) honors the switch under ``chat_template_kwargs``;
+    # keep the top-level ``enable_thinking`` for other backends.
     if "qwen3" in model_name_lower:
-        sanitized_kwargs["extra_body"] = {"enable_thinking": False}
+        sanitized_kwargs["extra_body"] = {
+            "chat_template_kwargs": {"enable_thinking": False},
+            "enable_thinking": False,
+        }
 
     if backend == "base":
         return sanitized_gen_conf, sanitized_kwargs
