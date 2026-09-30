@@ -55,6 +55,8 @@ class FulltextQueryer(QueryBase):
         ).strip()
         otxt = txt
         txt = self.rmWWW(txt)
+        if not txt.strip():
+            return MatchTextExpr(self.query_fields, "__empty__", 100, {"original_query": original_query}), []
 
         if not self.is_chinese(txt):
             txt = self.rmWWW(txt)

@@ -15,6 +15,7 @@
 import json
 import logging
 import random
+import asyncio
 from copy import deepcopy
 
 import xxhash
@@ -74,15 +75,26 @@ class Extractor(ProcessBase, LLM):
     async def _invoke(self, **kwargs):
         self.set_output("output_format", "chunks")
         self.callback(random.randint(1, 5) / 100.0, "Start to generate.")
-        inputs = self.get_input_elements()
+        inputs = {}
+        for k, v in self.get_input_elements().items():
+            inputs[k] = v["value"] if isinstance(v, dict) else v
+        # Pipeline execution passes the upstream component output as kwargs
+        # (e.g. ``chunks``), while canvas runs declare inputs explicitly.
+        # Merge both so extractors always see their upstream chunks; declared
+        # inputs take precedence.
+        for k, v in kwargs.items():
+            if k not in inputs:
+                inputs[k] = v
         chunks = []
         chunks_key = ""
-        args = {}
-        for k, v in inputs.items():
-            args[k] = v["value"]
-            if isinstance(args[k], list):
-                chunks = deepcopy(args[k])
-                chunks_key = k
+        args = dict(inputs)
+        list_inputs = {k: v for k, v in inputs.items() if isinstance(v, list)}
+        if "chunks" in list_inputs:
+            chunks_key = "chunks"
+        elif list_inputs:
+            chunks_key = next(iter(list_inputs))
+        if chunks_key:
+            chunks = deepcopy(list_inputs[chunks_key])
 
         if chunks:
             if self._param.field_name == "toc":
@@ -95,17 +107,40 @@ class Extractor(ProcessBase, LLM):
                 return
 
             prog = 0
-            for i, ck in enumerate(chunks):
-                args[chunks_key] = ck["text"]
+            done = 0
+            total = len(chunks)
+            semaphore = asyncio.Semaphore(4)
+
+            async def extract_one(ck):
+                nonlocal prog, done
+                text = ck["text"] if isinstance(ck.get("text"), str) else ""
+                args[chunks_key] = text
                 msg, sys_prompt = self._sys_prompt_and_msg([], args)
                 msg.insert(0, {"role": "system", "content": sys_prompt})
-                ck[self._param.field_name] = await self._generate_async(msg)
-                prog += 1./len(chunks)
-                if i % (len(chunks)//100+1) == 1:
-                    self.callback(prog, f"{i+1} / {len(chunks)}")
+                # Prompt templates may only contain a literal placeholder
+                # (e.g. "[在此处插入文本]") instead of a {var} reference.
+                # Inject the chunk text explicitly so the LLM sees the content.
+                if text:
+                    for m in msg:
+                        if m["role"] == "user" and isinstance(m.get("content"), str):
+                            content = m["content"]
+                            injected = False
+                            for ph in ("[在此处插入文本]", "[文本内容]", "[插入文本]"):
+                                if ph in content:
+                                    content = content.replace(ph, text)
+                                    injected = True
+                            if not injected and text not in content:
+                                content = content.rstrip() + "\n\n" + text
+                            m["content"] = content
+                async with semaphore:
+                    ck[self._param.field_name] = await self._generate_async(msg)
+                done += 1
+                prog = done / total
+                self.callback(prog, f"{done} / {total}")
+
+            await asyncio.gather(*(extract_one(ck) for ck in chunks))
             self.set_output("chunks", chunks)
         else:
             msg, sys_prompt = self._sys_prompt_and_msg([], args)
             msg.insert(0, {"role": "system", "content": sys_prompt})
             self.set_output("chunks", [{self._param.field_name: await self._generate_async(msg)}])
-

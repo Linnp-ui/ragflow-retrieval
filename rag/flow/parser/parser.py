@@ -64,6 +64,20 @@ from rag.llm.cv_model import Base as VLM
 from rag.utils.base64_image import image2id
 
 
+# Canvas DSLs store display labels (e.g. "Plain Text") while the parser
+# dispatches on internal keys (e.g. "plain_text"). Normalize on both the
+# validation and dispatch paths so pipelines built from the UI keep working.
+PDF_PARSE_METHOD_ALIASES = {
+    "deepdoc": "deepdoc",
+    "plain text": "plain_text",
+    "mineru": "mineru",
+    "docling": "docling",
+    "opendataloader": "opendataloader",
+    "tcadp parser": "tcadp parser",
+    "paddleocr": "paddleocr",
+}
+
+
 class ParserParam(ProcessParamBase):
     def __init__(self):
         super().__init__()
@@ -252,6 +266,11 @@ class ParserParam(ProcessParamBase):
         pdf_config = self.setups.get("pdf", {})
         if pdf_config:
             pdf_parse_method = pdf_config.get("parse_method", "")
+            if isinstance(pdf_parse_method, str):
+                pdf_parse_method = PDF_PARSE_METHOD_ALIASES.get(
+                    pdf_parse_method.strip().lower(), pdf_parse_method.strip()
+                )
+                pdf_config["parse_method"] = pdf_parse_method
             self.check_empty(pdf_parse_method, "Parse method abnormal.")
 
             if pdf_parse_method.lower() not in ["deepdoc", "plain_text", "mineru", "docling", "opendataloader", "tcadp parser", "paddleocr"]:
@@ -348,6 +367,8 @@ class Parser(ProcessBase):
             elif lowered.endswith("@paddleocr"):
                 parser_model_name = raw_parse_method
                 parse_method = "PaddleOCR"
+            else:
+                parse_method = PDF_PARSE_METHOD_ALIASES.get(lowered, parse_method)
 
         # DeepDOC returns structured page boxes directly.
         if parse_method.lower() == "deepdoc":

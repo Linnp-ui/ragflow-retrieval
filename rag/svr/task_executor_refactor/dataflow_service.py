@@ -296,7 +296,7 @@ class DataflowService:
             return None, token_consumption
 
     @classmethod
-    async def _encode_batch(cls, txts: List[str], embedding_model) -> Tuple[np.ndarray, int]:
+    def _encode_batch(cls, txts: List[str], embedding_model) -> Tuple[np.ndarray, int]:
         """Batch encode texts using the embedding model with truncation."""
         truncated = EmbeddingUtils.truncate_texts(txts, embedding_model.max_length)
         return embedding_model.encode(truncated)
@@ -306,6 +306,15 @@ class DataflowService:
         ctx = self._task_context
         metadata = {}
         for ck in chunks:
+            if not isinstance(ck, dict):
+                continue
+            # Some pipeline nodes may emit chunks without a ``text`` key
+            # (e.g. extractor fallback output). Derive content from the same
+            # priority chain used for embedding so these chunks never crash
+            # the ingestion.
+            src = ck.get("text") or ck.get("questions") or ck.get("summary") or ""
+            if not isinstance(src, str):
+                src = str(src)
             ck["doc_id"] = ctx.doc_id
             ck["kb_id"] = [str(ctx.kb_id)]
             ck["docnm_kwd"] = ctx.name
@@ -313,7 +322,7 @@ class DataflowService:
             ck["create_timestamp_flt"] = datetime.now().timestamp()
 
             if not ck.get("id"):
-                ck["id"] = xxhash.xxh64((ck["text"] + str(ck["doc_id"])).encode("utf-8")).hexdigest()
+                ck["id"] = xxhash.xxh64((src + str(ck["doc_id"])).encode("utf-8")).hexdigest()
 
             if "questions" in ck:
                 if "question_tks" not in ck:
@@ -338,8 +347,8 @@ class DataflowService:
                 del ck["metadata"]
 
             if "content_with_weight" not in ck:
-                ck["content_with_weight"] = ck["text"]
-            del ck["text"]
+                ck["content_with_weight"] = src
+            ck.pop("text", None)
 
             if "positions" in ck:
                 add_positions(ck, ck["positions"])
