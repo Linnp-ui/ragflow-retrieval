@@ -245,6 +245,9 @@ docker/patches/_mounted/
 # Internal ops notes (not part of the fork's runtime)
 docker/patches/ops-ragdoc/
 
+# Superseded MCP server backup; docker/patches/mcp_server.py is the live one
+/mcp_server_patched.py
+
 .claude/settings.local.json
 
 .run/
