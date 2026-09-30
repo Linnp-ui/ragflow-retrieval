@@ -9,15 +9,7 @@ services:
     profiles:
       - cpu
     image: ${RAGFLOW_IMAGE}
-    # Example configuration to set up an MCP server:
-    # command:
-    #   - --enable-mcpserver
-    #   - --mcp-host=0.0.0.0
-    #   - --mcp-port=9382
-    #   - --mcp-base-url=http://127.0.0.1:9380
-    #   - --mcp-script-path=/ragflow/mcp/server/server.py
-    #   - --mcp-mode=self-host
-    #   - --mcp-host-api-key=ragflow-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
     # Optional transport flags for MCP (customize if needed).
     # Host mode need to combined with --no-transport-streamable-http-enabled flag, namely, host+streamable-http is not supported yet.
     # The following are enabled by default unless explicitly disabled with --no-<flag>.
@@ -29,6 +21,12 @@ services:
     command:
       - --enable-adminserver
       - --init-model-provider-tables
+      - --enable-mcpserver
+      - --mcp-host=0.0.0.0
+      - --mcp-port=9382
+      - --mcp-base-url=http://127.0.0.1:9380
+      - --mcp-script-path=/ragflow/mcp/server/server.py
+      - --mcp-mode=host
     ports:
       - ${SVR_WEB_HTTP_PORT}:80
       - ${SVR_WEB_HTTPS_PORT}:443
@@ -44,6 +42,20 @@ services:
       # - ./nginx/nginx.conf:/etc/nginx/nginx.conf
       - ./service_conf.yaml.template:/ragflow/conf/service_conf.yaml.template
       - ./entrypoint.sh:/ragflow/entrypoint.sh
+      - ./patches/provider_api.py:/ragflow/api/apps/restful_apis/provider_api.py
+      - ./patches/tenant_model_instance_service.py:/ragflow/api/db/services/tenant_model_instance_service.py
+      - ./patches/task_service.py:/ragflow/api/db/services/task_service.py
+      - ./patches/search.py:/ragflow/rag/nlp/search.py
+      - ./patches/mcp_server.py:/ragflow/mcp/server/server.py
+      - ./patches/figure_parser.py:/ragflow/deepdoc/parser/figure_parser.py
+      - ./audit:/ragflow/audit
+      - ./patches/api_apps_init.py:/ragflow/api/apps/__init__.py
+      - ./patches/file_service.py:/ragflow/api/db/services/file_service.py
+      - ./patches/table.py:/ragflow/rag/app/table.py
+      - ./patches/knowledgebase_service.py:/ragflow/api/db/services/knowledgebase_service.py
+      - ./patches/dataset_api_service.py:/ragflow/api/apps/services/dataset_api_service.py
+      - ./patches/dialog_service.py:/ragflow/api/db/services/dialog_service.py
+      - ./patches/embedding_model.py:/ragflow/rag/llm/embedding_model.py
     env_file: .env
     networks:
       - ragflow
@@ -62,13 +74,13 @@ services:
     image: ${RAGFLOW_IMAGE}
     # Example configuration to set up an MCP server:
     # command:
-    #   - --enable-mcpserver
-    #   - --mcp-host=0.0.0.0
-    #   - --mcp-port=9382
-    #   - --mcp-base-url=http://127.0.0.1:9380
-    #   - --mcp-script-path=/ragflow/mcp/server/server.py
-    #   - --mcp-mode=self-host
-    #   - --mcp-host-api-key=ragflow-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+       #   - --enable-mcpserver
+       # - --mcp-host=0.0.0.0
+       #- --mcp-port=9382
+       #- --mcp-base-url=http://127.0.0.1:9380
+       #- --mcp-script-path=/ragflow/mcp/server/server.py
+       #- --mcp-mode=self-host
+       #- --mcp-host-api-key=ragflow-nNg4rw-ApMRRFiU4qcuYXRuPFS6jQHu1f_ivlHISII4
     # Optional transport flags for MCP (customize if needed).
     # Host mode need to combined with --no-transport-streamable-http-enabled flag, namely, host+streamable-http is not supported yet.
     # The following are enabled by default unless explicitly disabled with --no-<flag>.
@@ -92,6 +104,20 @@ services:
       # - ./nginx/nginx.conf:/etc/nginx/nginx.conf
       - ./service_conf.yaml.template:/ragflow/conf/service_conf.yaml.template
       - ./entrypoint.sh:/ragflow/entrypoint.sh
+      - ./patches/provider_api.py:/ragflow/api/apps/restful_apis/provider_api.py
+      - ./patches/tenant_model_instance_service.py:/ragflow/api/db/services/tenant_model_instance_service.py
+      - ./patches/task_service.py:/ragflow/api/db/services/task_service.py
+      - ./patches/search.py:/ragflow/rag/nlp/search.py
+      - ./patches/mcp_server.py:/ragflow/mcp/server/server.py
+      - ./patches/figure_parser.py:/ragflow/deepdoc/parser/figure_parser.py
+      - ./audit:/ragflow/audit
+      - ./patches/api_apps_init.py:/ragflow/api/apps/__init__.py
+      - ./patches/file_service.py:/ragflow/api/db/services/file_service.py
+      - ./patches/table.py:/ragflow/rag/app/table.py
+      - ./patches/knowledgebase_service.py:/ragflow/api/db/services/knowledgebase_service.py
+      - ./patches/dataset_api_service.py:/ragflow/api/apps/services/dataset_api_service.py
+      - ./patches/dialog_service.py:/ragflow/api/db/services/dialog_service.py
+      - ./patches/embedding_model.py:/ragflow/rag/llm/embedding_model.py
     env_file: .env
     networks:
       - ragflow

@@ -1,110 +1,84 @@
-# RAGFlow Project Instructions for GitHub Copilot
+# AGENTS.md
 
-This file provides context, build instructions, and coding standards for the RAGFlow project.
-It is structured to follow GitHub Copilot's [customization guidelines](https://docs.github.com/en/copilot/concepts/prompting/response-customization).
+Verified against the working tree. Deep-dive doc: `CLAUDE.md` (Python architecture).
 
-## 1. Project Overview
-RAGFlow is an open-source RAG (Retrieval-Augmented Generation) engine based on deep document understanding. It is a full-stack application with a Python backend and a React/TypeScript frontend.
+## Scope: Python backend
 
-- **Backend**: Python 3.10+ (Flask/Quart)
-- **Frontend**: TypeScript, React, UmiJS
-- **Architecture**: Microservices based on Docker.
-  - `api/`: Backend API server.
-  - `rag/`: Core RAG logic (indexing, retrieval).
-  - `deepdoc/`: Document parsing and OCR.
-  - `web/`: Frontend application.
+The parallel Go/C++ backend rewrite (`internal/`, `cmd/`, `build.sh`, `internal/cpp`) was removed
+in 72a7752 — it was never running in production. There is now one backend: Python. Don't add new
+infrastructure expecting a second implementation, and don't edit `web/vite.config.ts`
+`proxySchemes` for new routes (the `python` scheme already forwards all of `/api` and `/v1` to
+9380).
 
-## 2. Directory Structure
-- `api/`: Backend API server (Flask/Quart).
-  - `apps/`: API Blueprints (Knowledge Base, Chat, etc.).
-  - `db/`: Database models and services.
-- `rag/`: Core RAG logic.
-  - `llm/`: LLM, Embedding, and Rerank model abstractions.
-- `deepdoc/`: Document parsing and OCR modules.
-- `agent/`: Agentic reasoning components.
-- `web/`: Frontend application (React + UmiJS).
-- `docker/`: Docker deployment configurations.
-- `sdk/`: Python SDK.
-- `test/`: Backend tests.
+## Setup
 
-## 3. Build Instructions
-
-### Backend (Python)
-The project uses **uv** for dependency management.
-
-1. **Setup Environment**:
-   ```bash
-   uv sync --python 3.13 --all-extras
-   uv run python3 download_deps.py
-   ```
-
-2. **Run Server**:
-   - **Pre-requisite**: Start dependent services (MySQL, ES/Infinity, Redis, MinIO).
-     ```bash
-     docker compose -f docker/docker-compose-base.yml up -d
-     ```
-   - **Launch**:
-     ```bash
-     source .venv/bin/activate
-     export PYTHONPATH=$(pwd)
-     bash docker/launch_backend_service.sh
-     ```
-
-### Frontend (TypeScript/React)
-Located in `web/`.
-
-1. **Install Dependencies**:
-   ```bash
-   cd web
-   npm install
-   ```
-
-2. **Run Dev Server**:
-   ```bash
-   npm run dev
-   ```
-   Runs on port 8000 by default.
-
-### Docker Deployment
-To run the full stack using Docker:
 ```bash
-cd docker
-docker compose -f docker-compose.yml up -d
+uv sync --python 3.13 --all-extras   # Python is pinned to >=3.13,<3.14
+uv run python3 download_deps.py     # required: fetches nltk_data used by tokenizers
+pre-commit install
+docker compose -f docker/docker-compose-base.yml up -d   # MySQL/ES/Redis/MinIO
 ```
 
-## 4. Testing Instructions
+`download_deps.py` is not optional. `test/unit_test/conftest.py` reuses `./nltk_data`, and without it
+tokenizer-backed tests fail with `LookupError: Resource 'punkt_tab' not found`.
 
-### Backend Tests
-- **Run All Tests**:
-  ```bash
-  uv run pytest
-  ```
-- **Run Specific Test**:
-  ```bash
-  uv run pytest test/test_api.py
-  ```
+## Running
 
-### Frontend Tests
-- **Run Tests**:
-  ```bash
-  cd web
-  npm run test
-  ```
+```bash
+export PYTHONPATH=$(pwd)
+bash docker/launch_backend_service.sh              # ragflow + task_executor
+bash docker/launch_backend_service.sh task_executor # or: ragflow | admin | data_sync
 
-## 5. Coding Standards & Guidelines
-- **Python Formatting**: Use `ruff` for linting and formatting.
-  ```bash
-  ruff check
-  ruff format
-  ```
-- **Frontend Linting**:
-  ```bash
-  cd web
-  npm run lint
-  ```
-- **Pre-commit**: Ensure pre-commit hooks are installed.
-  ```bash
-  pre-commit install
-  pre-commit run --all-files
-  ```
+cd web && export API_PROXY_SCHEME=python && npm run dev   # Vite, port 9222
+```
 
+`API_PROXY_SCHEME` should be `python`. `web/vite.config.ts` still carries `hybrid`/`go` proxy
+tables, but both are dead — they target ports 9384/9383, which no longer have a listener.
+
+## Tests
+
+```bash
+uv sync --python 3.13 --group test   # pytest & co live in the `test` group, not --all-extras
+uv pip install -e sdk/python         # required for test/testcases/test_sdk_api
+
+uv run pytest test/unit_test        # pure unit tests — the only suite that runs without a stack
+uv run pytest test/unit_test/test_x.py -k name
+python run_tests.py -i              # what CI runs: unit_test only, -i ignores SyntaxWarning
+python run_tests.py -p -c -t path -k kw -m p1   # parallel / coverage / filter
+```
+
+Quirks:
+- Bare `uv run pytest` collects `test/testcases/` (needs a live server via `HOST_ADDRESS`) and
+  `test/playwright/` (needs browsers). Scope to `test/unit_test` for quick checks.
+- `test/testcases/` takes a custom `--level p1|p2|p3` flag (defined in its `conftest.py`) that
+  rewrites `markexpr`; markers `p0`–`p3`, `smoke`, `auth`, `asyncio` are declared in
+  `pyproject.toml`. CI uses `p2` for PRs and `p3` nightly.
+- `filterwarnings = ["error", ...]` — warnings fail tests. Don't "fix" a test by suppressing a
+  warning you introduced.
+- `asyncio_mode = "auto"`: async test functions need no decorator.
+- Files named `test_*_routes_unit.py` under `test/testcases/restful_api/` are the offline route
+  tests; the siblings without `_unit` hit the running server.
+- Each API test suite runs twice in CI against `DOC_ENGINE=infinity` then `elasticsearch`; both
+  doc-store code paths must work.
+- CI runs `ruff check` → Go build → `run_tests.py -i`. Nothing else gates Python changes.
+
+## Lint / typecheck
+
+```bash
+ruff check && ruff format          # line-length is 200, not 88; E402 ignored, ASYNC/ASYNC1 enabled
+cd web && npm run lint             # eslint
+cd web && npm run type-check       # tsc --noEmit
+cd web && npm run test             # jest --coverage
+```
+
+## Conventions
+
+- `check-yaml`, `trailing-whitespace`, `end-of-file-fixer`, `mixed-line-ending` etc. run via
+  pre-commit on every commit.
+- Python: async everywhere (`Quart`, not Flask). Components talk through the canvas graph in
+  `agent/canvas.py` / `rag/flow/pipeline.py`; variable refs look like `{component_id@output_var}`.
+- `DOC_ENGINE` in `docker/.env` (`elasticsearch` | `infinity` | `opensearch` | `oceanbase`) is
+  read at process start — change it and restart, don't expect a live switch.
+- `docker/.env` holds all deployment env; `docker/service_conf.yaml.template` is the backend config
+  template.
+- `check_comment_ascii.py` exists but its CI step is disabled (`if: ${{ false }}`).

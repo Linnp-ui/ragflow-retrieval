@@ -48,7 +48,7 @@ MCP_HOST="127.0.0.1"
 MCP_PORT=9382
 MCP_BASE_URL="http://127.0.0.1:9380"
 MCP_SCRIPT_PATH="/ragflow/mcp/server/server.py"
-MCP_MODE="self-host"
+MCP_MODE="host"
 MCP_HOST_API_KEY=""
 MCP_TRANSPORT_SSE_FLAG="--transport-sse-enabled"
 MCP_TRANSPORT_STREAMABLE_HTTP_FLAG="--transport-streamable-http-enabled"
@@ -203,7 +203,7 @@ function task_exe() {
     while true; do
         LD_PRELOAD="$JEMALLOC_PATH" \
         "$PY" rag/svr/task_executor.py -i "${host_id}_${consumer_id}" -t "common" &
-        wait;
+        wait || echo "task executor ${host_id}_${consumer_id} exited with code $?";
         sleep 1;
     done
 }
@@ -275,8 +275,8 @@ if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
 
     while true; do
         echo "Attempt to start RAGFlow server..."
-        "$PY" api/ragflow_server.py ${INIT_SUPERUSER_ARGS}
-        echo "RAGFlow python server started."
+        "$PY" api/ragflow_server.py ${INIT_SUPERUSER_ARGS} || echo "RAGFlow python server exited with code $?"
+        echo "RAGFlow python server stopped, restarting in 1s."
         sleep 1;
     done &
 fi
@@ -285,8 +285,8 @@ fi
 if [[ "${ENABLE_ADMIN_SERVER}" -eq 1 ]]; then
     while true; do
         echo "Attempt to start Admin python server..."
-        "$PY" admin/server/admin_server.py
-        echo "Admin python server started"
+        "$PY" admin/server/admin_server.py || echo "Admin python server exited with code $?"
+        echo "Admin python server stopped, restarting in 1s."
         sleep 1;
     done &
 fi
@@ -295,12 +295,17 @@ if [[ "${ENABLE_DATASYNC}" -eq 1 ]]; then
     echo "Starting data sync..."
     while true; do
         "$PY" rag/svr/sync_data_source.py &
-        wait;
+        wait || echo "data sync exited with code $?";
         sleep 1;
     done &
 fi
 
 if [[ "${ENABLE_MCP_SERVER}" -eq 1 ]]; then
+    # 权限加固：强制 MCP server 使用 host（多租户）模式。
+    # 客户端必须携带各自的 RAGFlow API key / Bearer token，由 RAGFlow 层按身份执行权限校验；
+    # 避免 self-host 模式下所有请求共享 host API key 导致越权检索。
+    MCP_MODE="host"
+    MCP_HOST_API_KEY=""
     start_mcp_server
 fi
 
