@@ -10,6 +10,24 @@ infrastructure expecting a second implementation, and don't edit `web/vite.confi
 `proxySchemes` for new routes (the `python` scheme already forwards all of `/api` and `/v1` to
 9380).
 
+## Editing code: thirteen files live in `docker/patches/`
+
+`docker/docker-compose.yml` bind-mounts `docker/patches/*.py` over 13 main-tree modules
+(`search.py`, `mcp_server.py`, `provider_api.py`, `embedding_model.py`, `dialog_service.py`,
+`api_apps_init.py`, …). **The patch copy is what executes.** Editing the main-tree file has no
+effect at all. README.md has the full mapping table.
+
+After editing anything under `docker/patches/`, restart and verify:
+
+```bash
+cd docker && docker compose -f docker-compose.yml restart ragflow-cpu   # up -d will NOT restart
+md5sum patches/<file>.py && docker exec docker-ragflow-cpu-1 md5sum /ragflow/<mounted path>
+```
+
+`restart` is mandatory, not optional: a bind mount binds an inode, and any tool that saves by
+rename (`sed -i`, most editors) leaves the mount pointing at the old file. The container then serves
+stale code with no error — and possibly a half-updated file.
+
 ## Setup
 
 ```bash
@@ -48,8 +66,16 @@ python run_tests.py -p -c -t path -k kw -m p1   # parallel / coverage / filter
 ```
 
 Quirks:
+- **Run the whole `test/unit_test`, not single files.** `filterwarnings = ["error", ...]` plus
+  import-time deprecation warnings means a file that passes in a full run can fail collection when
+  run alone (`test_dataflow_service.py` raises `UserWarning: local_dir_use_symlinks`). Warnings
+  raised at import are only emitted once per process.
 - Bare `uv run pytest` collects `test/testcases/` (needs a live server via `HOST_ADDRESS`) and
   `test/playwright/` (needs browsers). Scope to `test/unit_test` for quick checks.
+- `scholarly==1.7.11` (pinned in `uv.lock`) is not Python 3.13 compatible — `re.search("cites=[\d+…")`
+  without the `r` prefix is a hard `SyntaxError` there, which breaks collection of any test importing
+  `agent/tools/googlescholar.py`. Patch line 312 of `.venv/.../scholarly/_scholarly.py` locally, or
+  `--ignore` the affected files. Upstream is affected too.
 - `test/testcases/` takes a custom `--level p1|p2|p3` flag (defined in its `conftest.py`) that
   rewrites `markexpr`; markers `p0`–`p3`, `smoke`, `auth`, `asyncio` are declared in
   `pyproject.toml`. CI uses `p2` for PRs and `p3` nightly.
@@ -60,7 +86,10 @@ Quirks:
   tests; the siblings without `_unit` hit the running server.
 - Each API test suite runs twice in CI against `DOC_ENGINE=infinity` then `elasticsearch`; both
   doc-store code paths must work.
-- CI runs `ruff check` → Go build → `run_tests.py -i`. Nothing else gates Python changes.
+- `download_deps.py` also fetches chromedriver, tika and two HuggingFace models that
+  `test/unit_test` never loads — `nltk.download("wordnet"/"punkt"/"punkt_tab")` is the only part
+  needed, and the zips may need extracting by hand.
+- CI runs `ruff check` → `run_tests.py -i`. Nothing else gates Python changes.
 
 ## Lint / typecheck
 

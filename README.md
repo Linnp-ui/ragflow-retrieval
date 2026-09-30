@@ -41,11 +41,38 @@ Verify what is actually mounted rather than trusting the file list:
 cd docker && docker compose config | grep patches/
 ```
 
-After changing a mounted file, restart the container — the mount is read at process start:
+After changing a mounted file, restart the container — the mount is read at process start.
+
+## Restarting after a patch change
 
 ```bash
-docker compose -f docker/docker-compose.yml up -d ragflow-cpu
+cd docker
+docker compose -f docker-compose.yml restart ragflow-cpu
 ```
+
+Two traps, both hit in practice:
+
+**`up -d` does not restart.** It prints `Container ... Running` and returns, because the compose
+configuration is unchanged — only the file *inside* the mount changed. Use `restart`, or
+`up -d --force-recreate` if the mount list itself changed.
+
+**A bind mount binds an inode, not a path.** Editors and `sed -i` typically save by writing a
+temporary file and renaming it over the original, which replaces the inode. The mount keeps
+pointing at the old one, so the container silently keeps running the previous code. There is no
+error and no restart — the container just serves stale code.
+
+This can leave the file *half* updated. Changing `docker/patches/mcp_server.py` produced a
+container where line 691 already read the new value but line 734 still read the old one, with a
+checksum that matched neither the old nor the new file.
+
+So after editing a mounted file, verify rather than assume:
+
+```bash
+md5sum docker/patches/<file>.py
+docker exec docker-ragflow-cpu-1 md5sum /ragflow/<mounted path>
+```
+
+Matching checksums confirm the container will load the new code on restart.
 
 ## What this fork changes
 
